@@ -11,28 +11,35 @@ const string fileBegin = "Image";
 const string fileEnd = ".jpg";
 const char ESC = 27;
 const char ENTER = 13;
+const char SPACE = 32;
 const int DEFAULT_CAMERA = 0;
 const int EXTERNAL_CAMERA = 1;
+
+const unsigned NUMBER_OF_CAPTURES = 3;
+
+unsigned counter;
+
+cv::Point left_point, right_point;
 
 bool volatile waitingForMouseEvents = false;
 
 struct CapturedImage { 
 
 	cv::Mat img;
-	string windowName;
+	int img_number;
 	cv::Point left_point;
 	cv::Point right_point;
 
-	CapturedImage(const cv::Mat& i, const string& wn,cv::Point lp, cv::Point rp):
+	CapturedImage(const cv::Mat& i, unsigned n,cv::Point lp, cv::Point rp):
 		img(i.clone()),
-		windowName(wn),
+		img_number(n),
 		left_point(lp),
 		right_point(rp)
 	{}
 
 	CapturedImage(const CapturedImage& src):
 		img(src.img.clone()),
-		windowName(src.windowName),
+		img_number(src.img_number),
 		left_point(src.left_point),
 		right_point(src.right_point)
 	{}
@@ -73,7 +80,6 @@ void drawTarget(cv::Mat& img, int x, int y, int radius, Target t){
 void myMouseCallback( int event, int x, int y, int, void* param )
 {
 	static int click_count; // default to 0
-	static cv::Point prev_point;
 	if (waitingForMouseEvents){
 		cv::Mat& img = *(cv::Mat*) param;
 		string window_name;
@@ -85,14 +91,11 @@ void myMouseCallback( int event, int x, int y, int, void* param )
 			{
 			case 0:
 				drawTarget(img, x, y, 10,LEFT_TARGET);
-				prev_point = cv::Point(x,y);
+				left_point = cv::Point(x,y);
 				break;
 			case 1:
 				drawTarget(img, x, y, 10,RIGHT_TARGET);
-				//string window_name;
-				// windows will be consequently enumerated from A
-				window_name += 'A' + char(caps.size()); 
-				caps.push_back(CapturedImage(img,window_name,prev_point,cv::Point(x,y)));
+				right_point = cv::Point(x,y);
 				click_count = 0;
 				waitingForMouseEvents = false;
 				return;
@@ -106,6 +109,11 @@ void myMouseCallback( int event, int x, int y, int, void* param )
 			return;
 		}
 	}
+}
+
+void stitching(){
+	cout << "Started stitching..." << endl;
+	cout << "Done stitching..." << endl;
 }
 
 int main()
@@ -150,7 +158,14 @@ try {
 		cv::Mat frame(original_frame,frame_ROI);
         // Entire image won't be shown
         // Only ROI will be shown
-		cv::imshow(winName,frame);
+
+		cv::Mat shown_frame(frame.clone());
+		cv::Point text_origin(10,60);
+		ostringstream ost;
+		ost << counter;
+		cv::putText(shown_frame,ost.str(),text_origin,cv::FONT_HERSHEY_PLAIN,5,CV_RGB(255,0,0),10);
+
+		cv::imshow(winName,shown_frame);
         
         int c = cv::waitKey(1);
 
@@ -159,30 +174,49 @@ try {
 		HWND winhandle = (HWND) cvGetWindowHandle(winName.c_str());
 		SetForegroundWindow(winhandle);
 
-		if (c == ESC)
-			break;
-		else if (c == ENTER){
-            waitingForMouseEvents = true;
-			cv::setMouseCallback(winName,myMouseCallback, (void *) &frame);
-            while (waitingForMouseEvents){
-				cv::imshow(winName,frame);
+		bool ready_for_stitching = false;
+		string filename;
+
+		switch (c) {
+		case ESC:
+				return 0;
+		case ENTER:
+				waitingForMouseEvents = true;
+				cv::setMouseCallback(winName,myMouseCallback, (void *) &frame);
+				while (waitingForMouseEvents){
+					cv::imshow(winName,frame);
+					cv::waitKey(1);
+				}
+
+				filename = fileBegin + ost.str() + fileEnd;
+				cv::imwrite(filename,frame);
+
+				if (caps.size() < NUMBER_OF_CAPTURES) caps.push_back(CapturedImage(frame,counter,left_point,right_point));
+				else caps.at(counter) = CapturedImage(frame,counter,left_point,right_point);
+
+				cout << "captured: " << filename << endl;
+				for (vector<CapturedImage>::size_type i = 0; i < caps.size(); ++i){
+					CapturedImage& this_img = caps.at(i);
+					cv::imshow(ost.str(),this_img.img);
+				}
 				cv::waitKey(1);
-			}
-            ostringstream ost;
-            ost << fileBegin << counter << fileEnd;
-			cv::imwrite(ost.str(),frame);
-
-            cout << "captured: " << ost.str() << endl;
-			for (vector<CapturedImage>::size_type i = 0; i < caps.size(); ++i){
-				CapturedImage& this_img = caps.at(i);
-				cv::imshow(this_img.windowName,this_img.img);
+				++counter;
+				if (counter >= NUMBER_OF_CAPTURES) counter = 0;
+				cout << "Size of vector of captures: " << caps.size() << endl;
+				break;
+		case SPACE:
+			if (caps.size() == NUMBER_OF_CAPTURES) ready_for_stitching = true;
+			if (caps.size() > NUMBER_OF_CAPTURES) throw runtime_error("Too many captures in the vector");
+			if (caps.size() < NUMBER_OF_CAPTURES) cout << "Not enough images was captured" << endl;
+			break;
+		default:
+			break;
 			
-			}
-
-            ++counter;
 		}
+		if (ready_for_stitching) break;
 	}
 
+	stitching();
 	return 0;
 }
 catch (exception& e){
