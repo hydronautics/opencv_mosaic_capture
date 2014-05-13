@@ -7,6 +7,7 @@
 using namespace std;
 
 const string winName = "camera capture";
+const string outputWindow = "Panorama";
 const string fileBegin = "Image";
 const string fileEnd = ".jpg";
 const char ESC = 27;
@@ -111,8 +112,34 @@ void myMouseCallback( int event, int x, int y, int, void* param )
 	}
 }
 
-void stitching(){
+
+void stitching(cv::Size cap_size, int cap_type){
 	cout << "Started stitching..." << endl;
+
+	// resulting image should be big enough to contain all images, shifted by Y-axis
+	cv::Size result_size(cap_size.width*NUMBER_OF_CAPTURES,cap_size.height*2);
+	
+	cv::Mat panorama(result_size,cap_type);
+	cv::Point pan_ROI_origin(0,cap_size.height/2);
+	cv::Rect pan_ROI_rect(pan_ROI_origin,cap_size);
+	cv::Mat pan_ROI(panorama,pan_ROI_rect);
+	caps.at(0).img.copyTo(pan_ROI);
+	cv::imshow(outputWindow,panorama);
+	cv::waitKey();
+
+	int right_edge_x_of_prev_img = cap_size.width;
+
+	for (decltype(caps.size()) i = 1; i < caps.size(); ++i){
+		pan_ROI_origin.x = right_edge_x_of_prev_img - caps.at(i).left_point.x - (cap_size.width - caps.at(i-1).right_point.x);
+		pan_ROI_origin.y += caps.at(i-1).right_point.y - caps.at(i).left_point.y ;
+		pan_ROI_rect = cv::Rect(pan_ROI_origin,cap_size);
+		pan_ROI = cv::Mat(panorama,pan_ROI_rect);
+		caps.at(i).img.copyTo(pan_ROI);
+		cv::imshow(outputWindow,panorama);
+		right_edge_x_of_prev_img = pan_ROI_origin.x + cap_size.width;
+		cv::waitKey();
+	}
+
 	cout << "Done stitching..." << endl;
 }
 
@@ -149,6 +176,13 @@ try {
 
 	cv::namedWindow(winName);
 
+	// size of the all captures, stored in the vector
+	// Is determined during startup
+	cv::Size cap_size;
+
+	// type of all captures, stored in the vector
+	int cap_type;
+
 	for (;;){
 		cv::Mat original_frame;
 		capture >> original_frame;
@@ -158,6 +192,9 @@ try {
 		cv::Mat frame(original_frame,frame_ROI);
         // Entire image won't be shown
         // Only ROI will be shown
+
+		cap_size = frame.size();
+		cap_type = frame.type();
 
 		cv::Mat shown_frame(frame.clone());
 		cv::Point text_origin(10,60);
@@ -215,8 +252,8 @@ try {
 		}
 		if (ready_for_stitching) break;
 	}
-
-	stitching();
+	cout << caps.size() << endl;
+	stitching(cap_size,cap_type);
 	return 0;
 }
 catch (exception& e){
