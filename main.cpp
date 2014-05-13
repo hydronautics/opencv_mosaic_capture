@@ -16,14 +16,6 @@ const char SPACE = 32;
 const int DEFAULT_CAMERA = 0;
 const int EXTERNAL_CAMERA = 1;
 
-const unsigned NUMBER_OF_CAPTURES = 3;
-
-unsigned counter;
-
-cv::Point left_point, right_point;
-
-bool volatile waitingForMouseEvents = false;
-
 struct CapturedImage { 
 
 	cv::Mat img;
@@ -32,14 +24,14 @@ struct CapturedImage {
 	cv::Point right_point;
 
 	CapturedImage(const cv::Mat& i, unsigned n,cv::Point lp, cv::Point rp):
-		img(i.clone()),
+	img(i.clone()),
 		img_number(n),
 		left_point(lp),
 		right_point(rp)
 	{}
 
 	CapturedImage(const CapturedImage& src):
-		img(src.img.clone()),
+	img(src.img.clone()),
 		img_number(src.img_number),
 		left_point(src.left_point),
 		right_point(src.right_point)
@@ -47,9 +39,27 @@ struct CapturedImage {
 
 };
 
+
+// global variables
+
+unsigned number_of_captures = 3;
+
+unsigned counter;
+
+cv::Point left_point, right_point;
+
+bool volatile waitingForMouseEvents = false;
+
 vector<CapturedImage> caps;
 // snapshot location is 60x100 centimeters
-const double ROI_ratio = 3.0/5;
+double ROI_width_ratio = 3.0/5;
+
+double working_scale = 0.5;
+
+cv::VideoCapture capture;
+
+// end of global variables
+
 
 typedef enum Target {
 	LEFT_TARGET,
@@ -117,7 +127,7 @@ void stitching(cv::Size cap_size, int cap_type){
 	cout << "Started stitching..." << endl;
 
 	// resulting image should be big enough to contain all images, shifted by Y-axis
-	cv::Size result_size(cap_size.width*NUMBER_OF_CAPTURES,cap_size.height*2);
+	cv::Size result_size(cap_size.width*number_of_captures,cap_size.height*2);
 	
 	cv::Mat panorama(result_size,cap_type);
 	cv::Point pan_ROI_origin(0,cap_size.height/2);
@@ -143,36 +153,59 @@ void stitching(cv::Size cap_size, int cap_type){
 	cout << "Done stitching..." << endl;
 }
 
-int main()
-try {
-
+void parse_input(){
 	cout << "Select a camera for capturing" << endl;
 	cout << DEFAULT_CAMERA << ": Default camera (usually a webcam laptop webcam)" << endl;
 	cout << EXTERNAL_CAMERA << ": Additional camera (usually an externally connected device)" << endl;
 	int cam_index = DEFAULT_CAMERA;
 	cin >> cam_index;
 	cout << "Selected device # " << cam_index << endl;
-	cv::VideoCapture capture(cam_index);
+	capture.open(cam_index);
+
 	if (!capture.isOpened()){
 		throw runtime_error("Can't access selected device.");
 	}
 
-	double width = capture.get(CV_CAP_PROP_FRAME_WIDTH);
-	double height = capture.get(CV_CAP_PROP_FRAME_HEIGHT);
+	cout << "How many captured images should be stitched?" << endl;
+	cin >> number_of_captures;
+	if (!cin) cout << "Default number of captures set: " << number_of_captures << endl;
+
+	cout << "Set width ratio of the capture, from 0.1 to 1.0" << endl;
+	double temp = 0;
+	cin >> temp;
+	if (!cin || temp < 0.1 || temp > 1.0) {
+		cout << "Bad ratio specified, using default value: ";
+	}
+	else 
+		{
+			ROI_width_ratio = temp;
+			cout << "Ratio value selected: ";
+	}
+
+	cout << ROI_width_ratio << endl;
+}
+
+int main()
+try {
+
+	parse_input();
+
+	int width = int(capture.get(CV_CAP_PROP_FRAME_WIDTH));
+	int height = int(capture.get(CV_CAP_PROP_FRAME_HEIGHT));
 
 	cout << "width: " << width << endl;
 	cout << "height: " << height << endl;
 
-    int ROI_height = int(height);
-    int ROI_width = int(ROI_ratio*width);
-    int ROI_x_offset = int((width - ROI_width)/ 2.0); // ROI is in the middle
-    int ROI_y_offset = 0;
+	cv::Size working_size(int(width*working_scale),int(height*working_scale));
+
+	int ROI_height = working_size.height;
+	int ROI_width = int(ROI_width_ratio*working_size.width);
+	int ROI_x_offset = int((working_size.width - ROI_width)/ 2.0); // ROI is in the middle
+	int ROI_y_offset = 0;
 
 	cv::Rect frame_ROI(ROI_x_offset,ROI_y_offset,ROI_width,ROI_height);
 
-	cout << "Press Enter for frame capture and Escape for exit" << endl;
-
-	int counter = 0;
+	unsigned counter = 0;
 
 	cv::namedWindow(winName);
 
@@ -183,12 +216,15 @@ try {
 	// type of all captures, stored in the vector
 	int cap_type;
 
+	cout << "Press Enter for frame capture and Escape for exit" << endl;
 	for (;;){
 		cv::Mat original_frame;
 		capture >> original_frame;
-		//if (!capture) throw runtime_error("Failed to query frame");
+		if (original_frame.empty()) throw runtime_error("Failed to query frame");
 		
+		cv::resize(original_frame,original_frame,working_size);
 		// setting ROI for the original frame. All work will be then done on this ROI.
+
 		cv::Mat frame(original_frame,frame_ROI);
         // Entire image won't be shown
         // Only ROI will be shown
@@ -228,7 +264,7 @@ try {
 				filename = fileBegin + ost.str() + fileEnd;
 				cv::imwrite(filename,frame);
 
-				if (caps.size() < NUMBER_OF_CAPTURES) caps.push_back(CapturedImage(frame,counter,left_point,right_point));
+				if (caps.size() < number_of_captures) caps.push_back(CapturedImage(frame,counter,left_point,right_point));
 				else caps.at(counter) = CapturedImage(frame,counter,left_point,right_point);
 
 				cout << "captured: " << filename << endl;
@@ -238,13 +274,13 @@ try {
 				}
 				cv::waitKey(1);
 				++counter;
-				if (counter >= NUMBER_OF_CAPTURES) counter = 0;
+				if (counter >= number_of_captures) counter = 0;
 				cout << "Size of vector of captures: " << caps.size() << endl;
 				break;
 		case SPACE:
-			if (caps.size() == NUMBER_OF_CAPTURES) ready_for_stitching = true;
-			if (caps.size() > NUMBER_OF_CAPTURES) throw runtime_error("Too many captures in the vector");
-			if (caps.size() < NUMBER_OF_CAPTURES) cout << "Not enough images was captured" << endl;
+			if (caps.size() == number_of_captures) ready_for_stitching = true;
+			if (caps.size() > number_of_captures) throw runtime_error("Too many captures in the vector");
+			if (caps.size() < number_of_captures) cout << "Not enough images was captured" << endl;
 			break;
 		default:
 			break;
