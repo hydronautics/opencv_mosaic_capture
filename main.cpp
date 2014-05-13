@@ -56,7 +56,7 @@ vector<CapturedImage> caps;
 // snapshot location is 60x100 centimeters
 double ROI_width_ratio = 3.0/5;
 
-double working_scale = 0.5;
+double working_scale = 1;
 
 cv::VideoCapture capture;
 
