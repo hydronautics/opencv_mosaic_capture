@@ -10,6 +10,8 @@ const string winName = "camera capture";
 const string outputWindow = "Panorama";
 const string fileBegin = "Image";
 const string fileEnd = ".jpg";
+
+const string panoramaFile = "panorama.jpg";
 const char ESC = 27;
 const char ENTER = 13;
 const char SPACE = 32;
@@ -152,7 +154,10 @@ void stitching(cv::Size cap_size, int cap_type){
 		
 		cv::Rect result_ROI_rect(0,0,right_edge_x_of_prev_img,panorama_BIG.size().height);
 
-		cv::imshow(outputWindow,cv::Mat(panorama_BIG,result_ROI_rect));
+		cv::Mat shown_result(panorama_BIG,result_ROI_rect);
+		cv::imshow(outputWindow,shown_result);
+
+		cv::imwrite(panoramaFile,shown_result);
 		
 		cv::waitKey();
 	}
