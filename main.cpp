@@ -197,6 +197,11 @@ void parse_input(){
 	cout << ROI_width_ratio << endl;
 }
 
+void setHighGUIwindowToTop(const string& winname){
+	HWND winhandle = (HWND) cvGetWindowHandle(winname.c_str());
+	SetForegroundWindow(winhandle);
+}
+
 int main()
 try {
 
@@ -256,8 +261,7 @@ try {
 
 		// now we want our window to be topmost and have the focus
 		// this cannot be done by opencv, we have to use WinAPI
-		HWND winhandle = (HWND) cvGetWindowHandle(winName.c_str());
-		SetForegroundWindow(winhandle);
+		setHighGUIwindowToTop(winName);
 
 		bool ready_for_stitching = false;
 		string filename;
